@@ -14,6 +14,13 @@ export interface WatchdogOptions<T> {
 }
 
 export class WatchdogTimeoutError extends Error {
+  constructor(details: {
+    readonly phase: 'first-progress' | 'idle' | 'total';
+    readonly timeoutMs: number;
+    readonly elapsedMs: number;
+    readonly itemsSeen: number;
+    readonly progressItems: number;
+  });
   readonly code: 'ASYNC_ITERATOR_TIMEOUT';
   readonly phase: 'first-progress' | 'idle' | 'total';
   readonly timeoutMs: number;

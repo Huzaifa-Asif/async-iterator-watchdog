@@ -43,13 +43,25 @@ function getIterator(source) {
 }
 
 function closeBestEffort(iterator, state) {
-  if (state.closed || typeof iterator.return !== 'function') return;
+  if (state.closed) return;
   state.closed = true;
   try {
-    Promise.resolve(iterator.return()).catch(() => {});
+    const returnMethod = iterator.return;
+    if (typeof returnMethod !== 'function') return;
+    Promise.resolve(returnMethod.call(iterator)).catch(() => {});
   } catch {
     // Cleanup is intentionally best effort so a broken return() cannot mask the primary outcome.
   }
+}
+
+function timeoutError(deadline, state) {
+  return new WatchdogTimeoutError({
+    phase: deadline.phase,
+    timeoutMs: deadline.timeoutMs,
+    elapsedMs: Math.max(0, Math.round(monotonicNow() - state.startedAt)),
+    itemsSeen: state.itemsSeen,
+    progressItems: state.progressItems
+  });
 }
 
 function earliestDeadline(state, config) {
@@ -67,13 +79,14 @@ function earliestDeadline(state, config) {
 
 function waitForNext(iterator, state, config) {
   if (config.signal?.aborted) return Promise.reject(abortReason(config.signal));
+  const deadline = earliestDeadline(state, config);
+  if (deadline && deadline.dueAt <= monotonicNow()) return Promise.reject(timeoutError(deadline, state));
   let next;
   try {
     next = iterator.next();
   } catch (error) {
     return Promise.reject(error);
   }
-  const deadline = earliestDeadline(state, config);
   if (!deadline && !config.signal) return Promise.resolve(next);
 
   return new Promise((resolve, reject) => {
@@ -88,6 +101,14 @@ function waitForNext(iterator, state, config) {
     };
     const onAbort = () => finish(reject, abortReason(config.signal));
     config.signal?.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(next).then(
+      (result) => {
+        const overdue = earliestDeadline(state, config);
+        if (overdue && overdue.dueAt <= monotonicNow()) finish(reject, timeoutError(overdue, state));
+        else finish(resolve, result);
+      },
+      (error) => finish(reject, error)
+    );
     if (config.signal?.aborted) {
       onAbort();
       return;
@@ -95,19 +116,9 @@ function waitForNext(iterator, state, config) {
     if (deadline) {
       const delay = Math.max(0, deadline.dueAt - monotonicNow());
       timer = setTimeout(() => {
-        finish(reject, new WatchdogTimeoutError({
-          phase: deadline.phase,
-          timeoutMs: deadline.timeoutMs,
-          elapsedMs: Math.max(0, Math.round(monotonicNow() - state.startedAt)),
-          itemsSeen: state.itemsSeen,
-          progressItems: state.progressItems
-        }));
+        finish(reject, timeoutError(deadline, state));
       }, delay);
     }
-    Promise.resolve(next).then(
-      (result) => finish(resolve, result),
-      (error) => finish(reject, error)
-    );
   });
 }
 

@@ -6,7 +6,7 @@ Security fixes are provided for the latest published major version.
 
 ## Reporting a vulnerability
 
-Please use GitHub's private vulnerability reporting feature for this repository. Do not include exploit details, credentials, private stream data, or provider payloads in a public issue.
+Please use GitHub's private vulnerability reporting feature for this repository. If private reporting is unavailable, email `huzaifa8580@gmail.com` with the subject `async-iterator-watchdog security report`. Do not include exploit details, credentials, private stream data, or provider payloads in a public issue.
 
 Include affected versions, runtime, a minimal reproduction, impact, and any proposed mitigation. You should receive an acknowledgement within seven days. Disclosure timing will be coordinated after validation and a fix plan.
 

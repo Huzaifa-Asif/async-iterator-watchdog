@@ -143,6 +143,61 @@ test('total deadline is absolute despite continuing progress', async () => {
   });
 });
 
+test('total deadline cannot be starved by immediately resolved progress', async () => {
+  const iterator = { next: async () => ({ done: false, value: 'chunk' }), return() {}, [Symbol.asyncIterator]() { return this; } };
+  await assert.rejects(collect(watchAsyncIterable(iterator, { totalMs: 2 })), (error) => error.phase === 'total');
+});
+
+test('total deadline rejects a result returned after synchronous event-loop blocking', async () => {
+  const iterator = {
+    next() {
+      const until = performance.now() + 8;
+      while (performance.now() < until) {}
+      return { done: false, value: 'late' };
+    },
+    return() {},
+    [Symbol.asyncIterator]() { return this; }
+  };
+  await assert.rejects(collect(watchAsyncIterable(iterator, { totalMs: 2 })), (error) => {
+    assert.equal(error.phase, 'total');
+    assert.equal(error.itemsSeen, 0);
+    return true;
+  });
+});
+
+test('first-progress deadline cannot be starved by immediate non-progress items', async () => {
+  const iterator = { next: async () => ({ done: false, value: 'ping' }), return() {}, [Symbol.asyncIterator]() { return this; } };
+  await assert.rejects(collect(watchAsyncIterable(iterator, { firstProgressMs: 2, classify: () => 'heartbeat' })), (error) => {
+    assert.equal(error.phase, 'first-progress');
+    assert.ok(error.itemsSeen > 0);
+    return true;
+  });
+});
+
+test('idle deadline cannot be starved by immediately resolved ignored items', async () => {
+  let first = true;
+  const iterator = {
+    next: async () => ({ done: false, value: first ? (first = false, 'progress') : 'noise' }),
+    return() {},
+    [Symbol.asyncIterator]() { return this; }
+  };
+  await assert.rejects(collect(watchAsyncIterable(iterator, { idleMs: 2, classify: (item) => item === 'progress' ? 'progress' : 'ignore' })), (error) => error.phase === 'idle');
+});
+
+test('overdue idle deadline is enforced before pulling after consumer backpressure', async () => {
+  let pulls = 0;
+  const source = {
+    next: async () => ({ done: false, value: ++pulls }),
+    return() {},
+    [Symbol.asyncIterator]() { return this; }
+  };
+  const iterator = watchAsyncIterable(source, { idleMs: 10 })[Symbol.asyncIterator]();
+  assert.deepEqual(await iterator.next(), { done: false, value: 1 });
+  await delay(20);
+  await assert.rejects(iterator.next(), (error) => error.phase === 'idle');
+  assert.equal(pulls, 1);
+});
+
 test('external abort rethrows the caller reason and closes', async () => {
   const controller = new AbortController();
   const reason = new Error('stop now');
@@ -172,6 +227,27 @@ test('detects abort triggered synchronously inside next', async () => {
     [Symbol.asyncIterator]() { return this; }
   };
   await assert.rejects(collect(watchAsyncIterable(iterator, { totalMs: 500, signal: controller.signal })), (error) => error === reason);
+});
+
+test('observes a losing next thenable when next synchronously aborts', async () => {
+  const abortReason = new Error('aborted during pull');
+  const upstreamError = new Error('late upstream rejection');
+  const controller = new AbortController();
+  let observed = false;
+  const losingThenable = {
+    then(_resolve, reject) {
+      observed = true;
+      reject(upstreamError);
+    }
+  };
+  const iterator = {
+    next() { controller.abort(abortReason); return losingThenable; },
+    return() { return { done: true }; },
+    [Symbol.asyncIterator]() { return this; }
+  };
+  await assert.rejects(collect(watchAsyncIterable(iterator, { totalMs: 500, signal: controller.signal })), (error) => error === abortReason);
+  await delay(0);
+  assert.equal(observed, true);
 });
 
 test('preserves an upstream asynchronous error', async () => {
@@ -238,6 +314,15 @@ test('a rejecting return does not mask a timeout', async () => {
   await delay(0);
 });
 
+test('a throwing return getter does not mask a timeout', async () => {
+  const iterator = {
+    next: () => new Promise(() => {}),
+    get return() { throw new Error('return getter exploded'); },
+    [Symbol.asyncIterator]() { return this; }
+  };
+  await assert.rejects(collect(watchAsyncIterable(iterator, { firstProgressMs: 15 })), (error) => error.phase === 'first-progress');
+});
+
 test('validates every duration boundary', () => {
   for (const value of [0, -1, 1.5, NaN, -Infinity, MAX_SAFE_PLUS_ONE(), 2_147_483_648, '10', null]) {
     assert.throws(() => watchAsyncIterable(hangingIterator(), { firstProgressMs: value }), /firstProgressMs/);
@@ -267,4 +352,28 @@ test('CJS exports mirror ESM and execute the same policy', async () => {
   assert.deepEqual(Object.keys(cjs).sort(), ['WatchdogTimeoutError', 'classifications', 'watchAsyncIterable'].sort());
   async function* source() { yield 'cjs'; }
   assert.deepEqual(await collect(cjs.watchAsyncIterable(source(), { totalMs: 100 })), ['cjs']);
+});
+
+test('CJS observes a losing next thenable after synchronous abort', async () => {
+  const cjs = require('../src/index.cjs');
+  const abortReason = new Error('cjs aborted during pull');
+  const controller = new AbortController();
+  let observed = false;
+  const iterator = {
+    next() {
+      controller.abort(abortReason);
+      return { then(resolve) { observed = true; resolve({ done: true }); } };
+    },
+    return() { return { done: true }; },
+    [Symbol.asyncIterator]() { return this; }
+  };
+  await assert.rejects(collect(cjs.watchAsyncIterable(iterator, { signal: controller.signal })), (error) => error === abortReason);
+  await delay(0);
+  assert.equal(observed, true);
+});
+
+test('CJS enforces total deadline against immediate settlements', async () => {
+  const cjs = require('../src/index.cjs');
+  const iterator = { next: async () => ({ done: false, value: 'chunk' }), return() {}, [Symbol.asyncIterator]() { return this; } };
+  await assert.rejects(collect(cjs.watchAsyncIterable(iterator, { totalMs: 2 })), (error) => error.phase === 'total');
 });

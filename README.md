@@ -135,7 +135,9 @@ A frozen array containing the three accepted classification strings.
 
 ## Cancellation and cleanup
 
-On a timeout, caller abort, classifier failure, malformed iterator result, or consumer break, the wrapper calls the upstream iterator's `return()` once when available. That call is best effort and is not awaited, because a producer with a stuck `next()` can also leave `return()` pending forever. Cleanup errors are suppressed so they cannot replace the primary timeout or abort reason.
+When the wrapper observes a timeout, caller abort, classifier failure, malformed iterator result, or consumer break, it calls the upstream iterator's `return()` once when available. That call is best effort and is not awaited, because a producer with a stuck `next()` can also leave `return()` pending forever. Cleanup errors—including a throwing `return` getter—are suppressed so they cannot replace the primary timeout or abort reason.
+
+An async generator does not execute while its consumer is paused at a yielded value. If the caller aborts or a deadline expires during that pause, the wrapper observes it and requests cleanup when the consumer next calls `next()`/`return()` or resumes `for await`. If the consumer abandons the iterator without closing or resuming it, JavaScript provides no hook for this wrapper to run cleanup.
 
 Use the provider or transport's own cancellation mechanism as well. If it accepts an `AbortSignal`, pass that signal into the provider request and into this wrapper. A JavaScript wrapper cannot forcibly stop arbitrary work that ignores cancellation.
 
@@ -169,6 +171,7 @@ This package does not automatically abort `controller` when its own deadline exp
 - Multiple concurrent `next()` calls are serialized by the returned async generator; this is a pull-stream utility, not a multicast primitive.
 - Deadlines use the runtime's monotonic clock when available, but timer callbacks can be delayed by event-loop stalls.
 - Cleanup is best effort, and late settlement of an already timed-out `next()` is ignored.
+- Deadlines are checked before each pull and before accepting each settled result, so immediately resolved promises cannot starve them. An expiry while the consumer is paused surfaces on the consumer's next interaction with the iterator.
 - The package has no built-in metrics, logging, retry, buffering, or provider-specific event knowledge.
 
 ## Troubleshooting
