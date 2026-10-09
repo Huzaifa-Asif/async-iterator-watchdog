@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose a focused provider-neutral improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the concrete async-iteration liveness problem and why existing composition is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include native SDK features or established packages you evaluated.
+    validations:
+      required: true
