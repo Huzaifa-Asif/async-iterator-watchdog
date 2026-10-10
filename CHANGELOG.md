@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## 1.0.1 - 2026-10-10
+
+- Execute the shipped heartbeat-aware example as part of the aggregate package check.
+- Document how iterator liveness composes with provider lifecycle auditing.
+
 ## 1.0.0 - 2026-10-10
 
 - Add distinct first-progress, idle-activity, and total deadlines for async iterables.

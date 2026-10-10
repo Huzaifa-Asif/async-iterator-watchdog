@@ -202,6 +202,16 @@ The design was motivated by public issue reports, including [Vercel AI SDK #2207
 
 Use [`p-timeout`](https://www.npmjs.com/package/p-timeout) when you only need to bound one promise. Use [`abortable-iterator`](https://www.npmjs.com/package/abortable-iterator) when a separate component already owns the abort policy. Use a provider SDK's native stream deadlines when they fully cover your runtime and semantics.
 
+## Runnable example and related tool
+
+[`examples/heartbeat-aware.mjs`](examples/heartbeat-aware.mjs) demonstrates
+separate heartbeat and progress classification. It is executed by
+`npm run check` and ships in the npm tarball.
+
+For checking whether decoded OpenAI Responses or Anthropic Messages events
+formed a valid, successful lifecycle, see
+[`ai-stream-auditor`](https://www.npmjs.com/package/ai-stream-auditor).
+
 ## Development
 
 ```sh
